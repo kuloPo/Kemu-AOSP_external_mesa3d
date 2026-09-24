@@ -2219,16 +2219,12 @@ void ResourceTracker::on_vkGetPhysicalDeviceProperties2(void* context,
     // does not have the virtio-gpu interface that is expected.
     VirtGpuDevice* instance = VirtGpuDevice::getInstance();
 
-    const char* transport_name = instance ? "Virtio-GPU GFXStream" : "Goldfish GFXStream";
-
-    char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
-    int device_name_len = snprintf(device_name, sizeof(device_name), "%s (%s)",
-                                   transport_name, pProperties->properties.deviceName);
-    if (device_name_len >= (int)VK_MAX_PHYSICAL_DEVICE_NAME_SIZE) {
-        memcpy(device_name + VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 5, "...)", 4);
-        device_name_len = VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1;
-    }
-    memcpy(pProperties->properties.deviceName, device_name, device_name_len + 1);
+    /* KEMU: present the physical device as Qualcomm Adreno 830 to the guest,
+     * regardless of the host GPU (see docs/graphics-contract.md). */
+    pProperties->properties.vendorID = 0x5143;
+    pProperties->properties.deviceID = 0x44050001;
+    snprintf(pProperties->properties.deviceName, sizeof(pProperties->properties.deviceName),
+             "Adreno (TM) 830");
 
     if (!instance) {
         mesa_logd("%s(): Could not get an instance of the VirtGpuDevice", __func__);
