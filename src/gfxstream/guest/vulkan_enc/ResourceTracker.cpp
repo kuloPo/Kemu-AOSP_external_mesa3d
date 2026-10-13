@@ -6557,20 +6557,24 @@ VkResult ResourceTracker::on_vkQueueSubmitTemplate(void* context, VkResult input
     input_result = vkQueueSubmitEnc(enc, queue, submitCount, prunedSubmitInfos.data(), fence);
     if (input_result != VK_SUCCESS) return input_result;
 
-    lock.lock();
     int externalFenceFdToSignal = -1;
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR) || DETECT_OS_LINUX
-    if (fence != VK_NULL_HANDLE) {
-        auto it = info_VkFence.find(fence);
-        if (it != info_VkFence.end()) {
-            const auto& info = it->second;
-            if (info.syncFd && *info.syncFd >= 0) {
-                externalFenceFdToSignal = *info.syncFd;
+    {
+        std::lock_guard<std::recursive_mutex> fenceLock(mLock);
+        if (fence != VK_NULL_HANDLE) {
+            auto it = info_VkFence.find(fence);
+            if (it != info_VkFence.end()) {
+                const auto& info = it->second;
+                if (info.syncFd && *info.syncFd >= 0) {
+                    externalFenceFdToSignal = *info.syncFd;
+                }
             }
         }
     }
 #endif
+    // Do not hold mLock while waiting for the host. Other encoders may need it
+    // to flush earlier commands that the host must execute before this wait.
     VkResult waitIdleRes = VK_SUCCESS;
     if (externalFenceFdToSignal >= 0 || !post_wait_events.empty() || !post_wait_sync_fds.empty()) {
         auto hostConn = ResourceTracker::threadingCallbacks.hostConnectionGetFunc();
