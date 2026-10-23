@@ -42,6 +42,9 @@ public:
 
     bool allocate(GoldfishAddressSpaceBlockProvider *provider, size_t size);
     bool claimShared(GoldfishAddressSpaceBlockProvider *provider, uint64_t offset, uint64_t size);
+    // Makes later mmap() calls map an allocated block write-combined. Returns false if the
+    // kernel driver does not support it, in which case the block stays write-back.
+    bool setWriteCombine();
     uint64_t physAddr() const;
     uint64_t hostAddr() const;
     uint64_t offset() const { return m_offset; }

@@ -45,6 +45,14 @@ struct goldfish_address_space_claim_shared {
     __u64 size;
 };
 
+#define GOLDFISH_ADDRESS_SPACE_CACHING_WRITE_COMBINE	1
+
+struct goldfish_address_space_set_caching {
+    __u64 offset;
+    __u32 caching;
+    __u32 reserved;
+};
+
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_MAGIC		'G'
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_OP(OP, T)		_IOWR(GOLDFISH_ADDRESS_SPACE_IOCTL_MAGIC, OP, T)
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_ALLOCATE_BLOCK	GOLDFISH_ADDRESS_SPACE_IOCTL_OP(10, struct goldfish_address_space_allocate_block)
@@ -52,6 +60,7 @@ struct goldfish_address_space_claim_shared {
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_PING		GOLDFISH_ADDRESS_SPACE_IOCTL_OP(12, struct address_space_ping)
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_CLAIM_SHARED		GOLDFISH_ADDRESS_SPACE_IOCTL_OP(13, struct goldfish_address_space_claim_shared)
 #define GOLDFISH_ADDRESS_SPACE_IOCTL_UNCLAIM_SHARED		GOLDFISH_ADDRESS_SPACE_IOCTL_OP(14, __u64)
+#define GOLDFISH_ADDRESS_SPACE_IOCTL_SET_CACHING		GOLDFISH_ADDRESS_SPACE_IOCTL_OP(16, struct goldfish_address_space_set_caching)
 
 const char GOLDFISH_ADDRESS_SPACE_DEVICE_NAME[] = "/dev/goldfish_address_space";
 
@@ -101,6 +110,11 @@ long ioctl_claim_shared(int fd, struct goldfish_address_space_claim_shared *requ
 long ioctl_unclaim_shared(int fd, uint64_t offset)
 {
     return ::ioctl(fd, GOLDFISH_ADDRESS_SPACE_IOCTL_UNCLAIM_SHARED, &offset);
+}
+
+long ioctl_set_caching(int fd, struct goldfish_address_space_set_caching *request)
+{
+    return ::ioctl(fd, GOLDFISH_ADDRESS_SPACE_IOCTL_SET_CACHING, request);
 }
 
 }  // namespace
@@ -224,6 +238,19 @@ bool GoldfishAddressSpaceBlock::claimShared(GoldfishAddressSpaceBlockProvider *p
     m_is_shared_mapping = true;
 
     return true;
+}
+
+bool GoldfishAddressSpaceBlock::setWriteCombine()
+{
+    if (m_size == 0 || m_is_shared_mapping || m_mmaped_ptr) {
+        return false;
+    }
+
+    struct goldfish_address_space_set_caching request;
+    ::memset(&request, 0, sizeof(request));
+    request.offset = m_offset;
+    request.caching = GOLDFISH_ADDRESS_SPACE_CACHING_WRITE_COMBINE;
+    return ioctl_set_caching(m_handle, &request) == 0;
 }
 
 uint64_t GoldfishAddressSpaceBlock::physAddr() const

@@ -6744,6 +6744,17 @@ VkResult ResourceTracker::on_vkMapMemoryIntoAddressSpaceGOOGLE_pre(void*, VkResu
     GoldfishAddressSpaceBlockPtr block = std::make_shared<GoldfishAddressSpaceBlock>();
     block->allocate(mGoldfishAddressSpaceBlockProvider.get(), memInfo.coherentMemorySize);
 
+    // Host visible memory that is not host cached is write-combined on the host. The
+    // hypervisor makes a write-back guest mapping of such memory uncached, so map it
+    // write-combined to keep the speed the memory type has natively.
+    auto deviceIt = info_VkDevice.find(memInfo.device);
+    if (deviceIt != info_VkDevice.end() &&
+        !(deviceIt->second.memProps.memoryTypes[memInfo.memoryTypeIndex].propertyFlags &
+          VK_MEMORY_PROPERTY_HOST_CACHED_BIT) &&
+        !block->setWriteCombine()) {
+        mesa_logw_once("Address space driver cannot map memory write-combined.");
+    }
+
     memInfo.goldfishBlock = block;
     *pAddress = block->physAddr();
 
