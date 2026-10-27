@@ -13,6 +13,7 @@
 #include <optional>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "CommandBufferStagingStream.h"
 #include "GfxStreamConnectionManager.h"
@@ -444,6 +445,22 @@ class ResourceTracker {
                                             const VkAllocationCallbacks* pAllocator,
                                             VkDescriptorSetLayout* pSetLayout);
 
+    VkResult on_vkCreatePipelineLayout(void* context, VkResult, VkDevice device,
+                                       const VkPipelineLayoutCreateInfo* pCreateInfo,
+                                       const VkAllocationCallbacks* pAllocator,
+                                       VkPipelineLayout* pPipelineLayout);
+    void on_vkDestroyPipelineLayout(void* context, VkDevice device, VkPipelineLayout layout,
+                                    const VkAllocationCallbacks* pAllocator);
+    void on_vkCmdPushDescriptorSet(void* context, VkCommandBuffer commandBuffer,
+                                   VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+                                   uint32_t set, uint32_t descriptorWriteCount,
+                                   const VkWriteDescriptorSet* pDescriptorWrites,
+                                   bool useCoreEntryPoint = false);
+    void on_vkCmdPushDescriptorSetWithTemplate(void* context, VkCommandBuffer commandBuffer,
+                                               VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+                                               VkPipelineLayout layout, uint32_t set,
+                                               const void* pData, bool useCoreEntryPoint = false);
+
     void on_vkUpdateDescriptorSets(void* context, VkDevice device, uint32_t descriptorWriteCount,
                                    const VkWriteDescriptorSet* pDescriptorWrites,
                                    uint32_t descriptorCopyCount,
@@ -869,6 +886,7 @@ class ResourceTracker {
     };
 
     struct VkDescriptorUpdateTemplate_Info {
+        VkPipelineBindPoint pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         uint32_t templateEntryCount = 0;
         VkDescriptorUpdateTemplateEntry* templateEntries;
 
@@ -959,6 +977,9 @@ class ResourceTracker {
     CoherentMemoryPtr freeCoherentMemoryLocked(VkDeviceMemory memory, VkDeviceMemory_Info& info);
 
     void EmitGuestAndHostTraceMarker(VkEncoder* encoder);
+
+    std::unordered_map<VkPipelineLayout, std::vector<std::unordered_set<uint32_t>>>
+        mImmutablePushSamplerBindings;
 
     std::recursive_mutex mLock;
 

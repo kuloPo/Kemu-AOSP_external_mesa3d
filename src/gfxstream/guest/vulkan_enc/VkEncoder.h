@@ -721,6 +721,12 @@ class VkEncoder {
     VkResult vkGetSemaphoreFdKHR(VkDevice device, const VkSemaphoreGetFdInfoKHR* pGetFdInfo,
                                  int* pFd, uint32_t doLock);
 #endif
+#ifdef VK_KHR_push_descriptor
+    void vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
+                                   VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+                                   uint32_t set, uint32_t descriptorWriteCount,
+                                   const VkWriteDescriptorSet* pDescriptorWrites, uint32_t doLock);
+#endif
 #ifdef VK_KHR_descriptor_update_template
     VkResult vkCreateDescriptorUpdateTemplateKHR(
         VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,

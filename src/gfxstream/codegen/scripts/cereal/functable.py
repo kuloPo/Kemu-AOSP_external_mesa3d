@@ -8,6 +8,8 @@ import copy
 import re
 
 RESOURCE_TRACKER_ENTRIES = [
+    "vkCreatePipelineLayout",
+    "vkDestroyPipelineLayout",
     "vkEnumerateInstanceExtensionProperties",
     "vkEnumerateDeviceExtensionProperties",
     "vkEnumeratePhysicalDevices",
@@ -113,6 +115,13 @@ SUCCESS_VAL = {
 # These could be entrypoints that are custom-written for gfxstream, or ones that
 # are meant fall back to the vk_common_* entrypoints
 NON_AUTOGEN_ENTRYPOINTS = [
+    "vkCmdPushDescriptorSet",
+    "vkCmdPushDescriptorSetKHR",
+    "vkCmdPushDescriptorSetWithTemplate",
+    "vkCmdPushDescriptorSetWithTemplateKHR",
+    "vkCreateDescriptorUpdateTemplate",
+    "vkCreateDescriptorUpdateTemplateKHR",
+
     # Instance/device/physical-device special-handling, dispatch tables, etc..
     "vkCreateInstance",
     "vkDestroyInstance",

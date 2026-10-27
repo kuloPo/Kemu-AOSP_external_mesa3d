@@ -1,0 +1,10 @@
+// Copyright 2026 The Android Open Source Project
+// SPDX-License-Identifier: Apache-2.0
+cc_test {
+    name: "gfxstream_push_descriptor_test",
+    srcs: ["push_descriptor_test.cpp"],
+    gtest: false,
+    shared_libs: ["libvulkan"],
+    cflags: ["-Wall", "-Wextra", "-Wno-missing-field-initializers"],
+    test_suites: ["device-tests"],
+}

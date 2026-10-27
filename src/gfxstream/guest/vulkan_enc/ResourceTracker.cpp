@@ -1814,6 +1814,7 @@ VkResult ResourceTracker::on_vkEnumerateDeviceExtensionProperties(
         "VK_EXT_queue_family_foreign",
         "VK_EXT_scalar_block_layout",
         "VK_KHR_descriptor_update_template",
+        "VK_KHR_push_descriptor",
         "VK_KHR_storage_buffer_storage_class",
         "VK_EXT_depth_clip_enable",
         "VK_KHR_create_renderpass2",
@@ -5413,6 +5414,184 @@ VkResult ResourceTracker::on_vkCreateDescriptorSetLayout(
     return res;
 }
 
+VkResult ResourceTracker::on_vkCreatePipelineLayout(void* context, VkResult, VkDevice device,
+                                                    const VkPipelineLayoutCreateInfo* pCreateInfo,
+                                                    const VkAllocationCallbacks* pAllocator,
+                                                    VkPipelineLayout* pPipelineLayout) {
+    auto* enc = static_cast<VkEncoder*>(context);
+    auto result =
+        enc->vkCreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout, true);
+    if (result != VK_SUCCESS) return result;
+    std::lock_guard<std::recursive_mutex> lock(mLock);
+    auto& sets = mImmutablePushSamplerBindings[*pPipelineLayout];
+    sets.resize(pCreateInfo->setLayoutCount);
+    for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; ++i) {
+        if (!pCreateInfo->pSetLayouts[i]) continue;
+        const auto* info =
+            as_goldfish_VkDescriptorSetLayout(pCreateInfo->pSetLayouts[i])->layoutInfo;
+        for (const auto& binding : info->bindings) {
+            if ((binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
+                 binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) &&
+                binding.pImmutableSamplers) {
+                sets[i].insert(binding.binding);
+            }
+        }
+    }
+    return result;
+}
+
+void ResourceTracker::on_vkDestroyPipelineLayout(void* context, VkDevice device,
+                                                 VkPipelineLayout layout,
+                                                 const VkAllocationCallbacks* pAllocator) {
+    {
+        std::lock_guard<std::recursive_mutex> lock(mLock);
+        mImmutablePushSamplerBindings.erase(layout);
+    }
+    static_cast<VkEncoder*>(context)->vkDestroyPipelineLayout(device, layout, pAllocator, true);
+}
+
+void ResourceTracker::on_vkCmdPushDescriptorSet(void* context, VkCommandBuffer commandBuffer,
+                                                VkPipelineBindPoint pipelineBindPoint,
+                                                VkPipelineLayout layout, uint32_t set,
+                                                uint32_t descriptorWriteCount,
+                                                const VkWriteDescriptorSet* pDescriptorWrites,
+                                                bool useCoreEntryPoint) {
+    std::unordered_set<uint32_t> immutableBindings;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mLock);
+        auto it = mImmutablePushSamplerBindings.find(layout);
+        if (it != mImmutablePushSamplerBindings.end() && set < it->second.size()) {
+            immutableBindings = it->second[set];
+        }
+    }
+    std::vector<VkWriteDescriptorSet> writes(descriptorWriteCount);
+    std::vector<std::vector<VkDescriptorImageInfo>> images(descriptorWriteCount);
+    std::vector<std::vector<VkDescriptorBufferInfo>> buffers(descriptorWriteCount);
+    for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
+        const auto& src = pDescriptorWrites[i];
+        auto& dst = writes[i];
+        dst = src;
+        // Ignored fields must never be dereferenced or translated as guest handles.
+        dst.dstSet = VK_NULL_HANDLE;
+        dst.pImageInfo = nullptr;
+        dst.pBufferInfo = nullptr;
+        dst.pTexelBufferView = nullptr;
+        if (isDescriptorTypeImageInfo(src.descriptorType)) {
+            const bool immutable = immutableBindings.count(src.dstBinding) != 0;
+            images[i].resize(src.descriptorCount);
+            for (uint32_t j = 0; j < src.descriptorCount; ++j) {
+                auto& image = images[i][j];
+                if (!immutable &&
+                    (src.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
+                     src.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)) {
+                    image.sampler = src.pImageInfo[j].sampler;
+                }
+                if (src.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER) {
+                    image.imageView = src.pImageInfo[j].imageView;
+                    image.imageLayout = src.pImageInfo[j].imageLayout;
+                }
+            }
+            dst.pImageInfo = images[i].data();
+        } else if (isDescriptorTypeBufferInfo(src.descriptorType)) {
+            buffers[i].resize(src.descriptorCount);
+            for (uint32_t j = 0; j < src.descriptorCount; ++j) {
+                buffers[i][j] = src.pBufferInfo[j];
+                if (buffers[i][j].buffer) {
+                    VK_FROM_HANDLE(gfxstream_vk_buffer, buffer, buffers[i][j].buffer);
+                    buffers[i][j].buffer = buffer->internal_object;
+                }
+            }
+            dst.pBufferInfo = buffers[i].data();
+        } else if (isDescriptorTypeBufferView(src.descriptorType)) {
+            dst.pTexelBufferView = src.pTexelBufferView;
+        }
+    }
+    auto* enc = static_cast<VkEncoder*>(context);
+    if (useCoreEntryPoint) {
+        enc->vkCmdPushDescriptorSet(commandBuffer, pipelineBindPoint, layout, set,
+                                    descriptorWriteCount, writes.data(), true);
+    } else {
+        enc->vkCmdPushDescriptorSetKHR(commandBuffer, pipelineBindPoint, layout, set,
+                                       descriptorWriteCount, writes.data(), true);
+    }
+}
+
+void ResourceTracker::on_vkCmdPushDescriptorSetWithTemplate(
+    void* context, VkCommandBuffer commandBuffer,
+    VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
+    const void* pData, bool useCoreEntryPoint) {
+    VkPipelineBindPoint bindPoint;
+    std::vector<VkDescriptorUpdateTemplateEntry> entries;
+    std::unordered_set<uint32_t> immutableBindings;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mLock);
+        auto it = info_VkDescriptorUpdateTemplate.find(descriptorUpdateTemplate);
+        if (it == info_VkDescriptorUpdateTemplate.end()) return;
+        const auto& info = it->second;
+        bindPoint = info.pipelineBindPoint;
+        if (info.templateEntryCount) {
+            entries.assign(info.templateEntries, info.templateEntries + info.templateEntryCount);
+        }
+        auto layoutIt = mImmutablePushSamplerBindings.find(layout);
+        if (layoutIt != mImmutablePushSamplerBindings.end() && set < layoutIt->second.size()) {
+            immutableBindings = layoutIt->second[set];
+        }
+    }
+    std::vector<VkWriteDescriptorSet> writes(entries.size());
+    std::vector<std::vector<VkDescriptorImageInfo>> images(entries.size());
+    std::vector<std::vector<VkDescriptorBufferInfo>> buffers(entries.size());
+    std::vector<std::vector<VkBufferView>> views(entries.size());
+    const auto* data = static_cast<const uint8_t*>(pData);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const auto& entry = entries[i];
+        auto& write = writes[i];
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstBinding = entry.dstBinding;
+        write.dstArrayElement = entry.dstArrayElement;
+        write.descriptorType = entry.descriptorType;
+        write.descriptorCount = entry.descriptorCount;
+        if (isDescriptorTypeImageInfo(entry.descriptorType)) {
+            images[i].resize(entry.descriptorCount);
+            const bool immutable = immutableBindings.count(entry.dstBinding) != 0;
+            for (uint32_t j = 0; j < entry.descriptorCount; ++j) {
+                if (immutable && entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) continue;
+                const auto* src = data + entry.offset + j * entry.stride;
+                // memcpy supports arbitrary template offsets, including unaligned data.
+                if (!immutable &&
+                    (entry.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
+                     entry.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)) {
+                    memcpy(&images[i][j].sampler, src + offsetof(VkDescriptorImageInfo, sampler),
+                           sizeof(VkSampler));
+                }
+                if (entry.descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER) {
+                    memcpy(&images[i][j].imageView,
+                           src + offsetof(VkDescriptorImageInfo, imageView), sizeof(VkImageView));
+                    memcpy(&images[i][j].imageLayout,
+                           src + offsetof(VkDescriptorImageInfo, imageLayout),
+                           sizeof(VkImageLayout));
+                }
+            }
+            write.pImageInfo = images[i].data();
+        } else if (isDescriptorTypeBufferInfo(entry.descriptorType)) {
+            buffers[i].resize(entry.descriptorCount);
+            for (uint32_t j = 0; j < entry.descriptorCount; ++j) {
+                memcpy(&buffers[i][j], data + entry.offset + j * entry.stride,
+                       sizeof(VkDescriptorBufferInfo));
+            }
+            write.pBufferInfo = buffers[i].data();
+        } else if (isDescriptorTypeBufferView(entry.descriptorType)) {
+            views[i].resize(entry.descriptorCount);
+            for (uint32_t j = 0; j < entry.descriptorCount; ++j) {
+                memcpy(&views[i][j], data + entry.offset + j * entry.stride, sizeof(VkBufferView));
+            }
+            write.pTexelBufferView = views[i].data();
+        }
+    }
+    on_vkCmdPushDescriptorSet(context, commandBuffer, bindPoint, layout, set,
+                              static_cast<uint32_t>(writes.size()), writes.data(),
+                              useCoreEntryPoint);
+}
+
 void ResourceTracker::on_vkUpdateDescriptorSets(void* context, VkDevice device,
                                                 uint32_t descriptorWriteCount,
                                                 const VkWriteDescriptorSet* pDescriptorWrites,
@@ -6789,6 +6968,7 @@ VkResult ResourceTracker::initDescriptorUpdateTemplateBuffers(
     }
 
     auto& info = it->second;
+    info.pipelineBindPoint = pCreateInfo->pipelineBindPoint;
     uint32_t inlineUniformBlockBufferSize = 0;
 
     for (uint32_t i = 0; i < pCreateInfo->descriptorUpdateEntryCount; ++i) {

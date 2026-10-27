@@ -1,0 +1,16 @@
+#version 450
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, std430) buffer Output { uint values[]; } outputData;
+layout(set = 0, binding = 1, std140) uniform Input { uint value; } inputData[2];
+layout(set = 0, binding = 2) uniform usamplerBuffer texelData;
+layout(set = 0, binding = 3, r32ui) uniform readonly uimage2D storageImage;
+layout(set = 0, binding = 4) uniform utexture2D sampledImage;
+layout(set = 0, binding = 5) uniform sampler imageSampler;
+layout(set = 0, binding = 6) uniform usampler2D combinedImage;
+layout(push_constant) uniform Push { uint index; } pushData;
+void main() {
+    outputData.values[pushData.index] = inputData[0].value + inputData[1].value +
+        texelFetch(texelData, 0).r + imageLoad(storageImage, ivec2(0)).r +
+        texelFetch(usampler2D(sampledImage, imageSampler), ivec2(0), 0).r +
+        texelFetch(combinedImage, ivec2(0), 0).r;
+}

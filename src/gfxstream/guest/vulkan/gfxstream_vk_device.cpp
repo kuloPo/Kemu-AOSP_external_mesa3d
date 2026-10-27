@@ -821,3 +821,81 @@ void gfxstream_vk_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWrite
             internal_pDescriptorWrites.data(), descriptorCopyCount, pDescriptorCopies);
     }
 }
+
+VkResult gfxstream_vk_CreateDescriptorUpdateTemplate(
+    VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) {
+    VK_FROM_HANDLE(gfxstream_vk_device, internalDevice, device);
+    auto info = *pCreateInfo;
+    if (info.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
+        info.descriptorSetLayout = VK_NULL_HANDLE;
+    } else {
+        info.pipelineLayout = VK_NULL_HANDLE;
+        info.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        info.set = 0;
+    }
+    auto* enc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
+    return enc->vkCreateDescriptorUpdateTemplate(internalDevice->internal_object, &info, pAllocator,
+                                                 pDescriptorUpdateTemplate, true);
+}
+
+VkResult gfxstream_vk_CreateDescriptorUpdateTemplateKHR(
+    VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
+    const VkAllocationCallbacks* pAllocator,
+    VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) {
+    VK_FROM_HANDLE(gfxstream_vk_device, internalDevice, device);
+    auto info = *pCreateInfo;
+    if (info.templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
+        info.descriptorSetLayout = VK_NULL_HANDLE;
+    } else {
+        info.pipelineLayout = VK_NULL_HANDLE;
+        info.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        info.set = 0;
+    }
+    auto* enc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
+    return enc->vkCreateDescriptorUpdateTemplateKHR(internalDevice->internal_object, &info,
+                                                    pAllocator, pDescriptorUpdateTemplate, true);
+}
+
+void gfxstream_vk_CmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
+                                          VkPipelineBindPoint pipelineBindPoint,
+                                          VkPipelineLayout layout, uint32_t set,
+                                          uint32_t descriptorWriteCount,
+                                          const VkWriteDescriptorSet* pDescriptorWrites) {
+    VK_FROM_HANDLE(gfxstream_vk_command_buffer, cmd, commandBuffer);
+    auto* enc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(cmd->internal_object);
+    gfxstream::vk::ResourceTracker::get()->on_vkCmdPushDescriptorSet(
+        enc, cmd->internal_object, pipelineBindPoint, layout, set, descriptorWriteCount,
+        pDescriptorWrites);
+}
+
+void gfxstream_vk_CmdPushDescriptorSet(VkCommandBuffer commandBuffer,
+                                       VkPipelineBindPoint pipelineBindPoint,
+                                       VkPipelineLayout layout, uint32_t set,
+                                       uint32_t descriptorWriteCount,
+                                       const VkWriteDescriptorSet* pDescriptorWrites) {
+    VK_FROM_HANDLE(gfxstream_vk_command_buffer, cmd, commandBuffer);
+    auto* enc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(cmd->internal_object);
+    gfxstream::vk::ResourceTracker::get()->on_vkCmdPushDescriptorSet(
+        enc, cmd->internal_object, pipelineBindPoint, layout, set, descriptorWriteCount,
+        pDescriptorWrites, true);
+}
+
+void gfxstream_vk_CmdPushDescriptorSetWithTemplateKHR(
+    VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    VkPipelineLayout layout, uint32_t set, const void* pData) {
+    VK_FROM_HANDLE(gfxstream_vk_command_buffer, cmd, commandBuffer);
+    auto* enc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(cmd->internal_object);
+    gfxstream::vk::ResourceTracker::get()->on_vkCmdPushDescriptorSetWithTemplate(
+        enc, cmd->internal_object, descriptorUpdateTemplate, layout, set, pData);
+}
+
+void gfxstream_vk_CmdPushDescriptorSetWithTemplate(
+    VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate,
+    VkPipelineLayout layout, uint32_t set, const void* pData) {
+    VK_FROM_HANDLE(gfxstream_vk_command_buffer, cmd, commandBuffer);
+    auto* enc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(cmd->internal_object);
+    gfxstream::vk::ResourceTracker::get()->on_vkCmdPushDescriptorSetWithTemplate(
+        enc, cmd->internal_object, descriptorUpdateTemplate, layout, set, pData, true);
+}

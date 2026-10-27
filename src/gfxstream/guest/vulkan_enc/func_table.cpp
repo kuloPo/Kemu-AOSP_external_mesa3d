@@ -883,9 +883,10 @@ VkResult gfxstream_vk_CreatePipelineLayout(VkDevice device,
     VK_FROM_HANDLE(gfxstream_vk_device, gfxstream_device, device);
     {
         auto vkEnc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
-        vkCreatePipelineLayout_VkResult_return =
-            vkEnc->vkCreatePipelineLayout(gfxstream_device->internal_object, pCreateInfo,
-                                          pAllocator, pPipelineLayout, true /* do lock */);
+        auto resources = gfxstream::vk::ResourceTracker::get();
+        vkCreatePipelineLayout_VkResult_return = resources->on_vkCreatePipelineLayout(
+            vkEnc, VK_SUCCESS, gfxstream_device->internal_object, pCreateInfo, pAllocator,
+            pPipelineLayout);
     }
     return vkCreatePipelineLayout_VkResult_return;
 }
@@ -898,8 +899,9 @@ void gfxstream_vk_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pipeli
     VK_FROM_HANDLE(gfxstream_vk_device, gfxstream_device, device);
     {
         auto vkEnc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
-        vkEnc->vkDestroyPipelineLayout(gfxstream_device->internal_object, pipelineLayout,
-                                       pAllocator, true /* do lock */);
+        auto resources = gfxstream::vk::ResourceTracker::get();
+        resources->on_vkDestroyPipelineLayout(vkEnc, gfxstream_device->internal_object,
+                                              pipelineLayout, pAllocator);
     }
 }
 VkResult gfxstream_vk_CreateSampler(VkDevice device, const VkSamplerCreateInfo* pCreateInfo,
@@ -1957,21 +1959,6 @@ void gfxstream_vk_DestroySamplerYcbcrConversion(VkDevice device,
                                                       ycbcrConversion, pAllocator);
     }
 }
-VkResult gfxstream_vk_CreateDescriptorUpdateTemplate(
-    VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) {
-    MESA_TRACE_SCOPE("vkCreateDescriptorUpdateTemplate");
-    VkResult vkCreateDescriptorUpdateTemplate_VkResult_return = (VkResult)0;
-    VK_FROM_HANDLE(gfxstream_vk_device, gfxstream_device, device);
-    {
-        auto vkEnc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
-        vkCreateDescriptorUpdateTemplate_VkResult_return = vkEnc->vkCreateDescriptorUpdateTemplate(
-            gfxstream_device->internal_object, pCreateInfo, pAllocator, pDescriptorUpdateTemplate,
-            true /* do lock */);
-    }
-    return vkCreateDescriptorUpdateTemplate_VkResult_return;
-}
 void gfxstream_vk_DestroyDescriptorUpdateTemplate(
     VkDevice device, VkDescriptorUpdateTemplate descriptorUpdateTemplate,
     const VkAllocationCallbacks* pAllocator) {
@@ -2913,59 +2900,6 @@ void gfxstream_vk_GetImageSubresourceLayout2(VkDevice device, VkImage image,
                                             pLayout, true /* do lock */);
     }
 }
-void gfxstream_vk_CmdPushDescriptorSet(VkCommandBuffer commandBuffer,
-                                       VkPipelineBindPoint pipelineBindPoint,
-                                       VkPipelineLayout layout, uint32_t set,
-                                       uint32_t descriptorWriteCount,
-                                       const VkWriteDescriptorSet* pDescriptorWrites) {
-    MESA_TRACE_SCOPE("vkCmdPushDescriptorSet");
-    VK_FROM_HANDLE(gfxstream_vk_command_buffer, gfxstream_commandBuffer, commandBuffer);
-    {
-        auto vkEnc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(
-            gfxstream_commandBuffer->internal_object);
-        std::vector<VkWriteDescriptorSet> internal_pDescriptorWrites(descriptorWriteCount);
-        std::vector<std::vector<VkDescriptorBufferInfo>> internal_VkWriteDescriptorSet_pBufferInfo;
-        for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
-            internal_pDescriptorWrites[i] = pDescriptorWrites[i];
-            /* VkWriteDescriptorSet::pBufferInfo */
-            internal_VkWriteDescriptorSet_pBufferInfo.push_back(
-                std::vector<VkDescriptorBufferInfo>());
-            internal_VkWriteDescriptorSet_pBufferInfo[i].resize(
-                internal_pDescriptorWrites[i].descriptorCount);
-            for (uint32_t j = 0; j < internal_pDescriptorWrites[i].descriptorCount; ++j) {
-                if (internal_pDescriptorWrites[i].pBufferInfo) {
-                    internal_VkWriteDescriptorSet_pBufferInfo[i][j] =
-                        internal_pDescriptorWrites[i].pBufferInfo[j];
-                    /* VkDescriptorBufferInfo::buffer */
-                    if (internal_VkWriteDescriptorSet_pBufferInfo[i][j].buffer) {
-                        VK_FROM_HANDLE(gfxstream_vk_buffer, gfxstream_buffer,
-                                       internal_VkWriteDescriptorSet_pBufferInfo[i][j].buffer);
-                        internal_VkWriteDescriptorSet_pBufferInfo[i][j].buffer =
-                            gfxstream_buffer->internal_object;
-                    }
-                }
-            }
-            internal_pDescriptorWrites[i].pBufferInfo =
-                internal_VkWriteDescriptorSet_pBufferInfo[i].data();
-        }
-        vkEnc->vkCmdPushDescriptorSet(gfxstream_commandBuffer->internal_object, pipelineBindPoint,
-                                      layout, set, descriptorWriteCount,
-                                      internal_pDescriptorWrites.data(), true /* do lock */);
-    }
-}
-void gfxstream_vk_CmdPushDescriptorSetWithTemplate(
-    VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate,
-    VkPipelineLayout layout, uint32_t set, const void* pData) {
-    MESA_TRACE_SCOPE("vkCmdPushDescriptorSetWithTemplate");
-    VK_FROM_HANDLE(gfxstream_vk_command_buffer, gfxstream_commandBuffer, commandBuffer);
-    {
-        auto vkEnc = gfxstream::vk::ResourceTracker::getCommandBufferEncoder(
-            gfxstream_commandBuffer->internal_object);
-        vkEnc->vkCmdPushDescriptorSetWithTemplate(gfxstream_commandBuffer->internal_object,
-                                                  descriptorUpdateTemplate, layout, set, pData,
-                                                  true /* do lock */);
-    }
-}
 void gfxstream_vk_CmdSetRenderingAttachmentLocations(
     VkCommandBuffer commandBuffer, const VkRenderingAttachmentLocationInfo* pLocationInfo) {
     MESA_TRACE_SCOPE("vkCmdSetRenderingAttachmentLocations");
@@ -3369,22 +3303,6 @@ VkResult gfxstream_vk_GetSemaphoreFdKHR(VkDevice device, const VkSemaphoreGetFdI
 }
 #endif
 #ifdef VK_KHR_descriptor_update_template
-VkResult gfxstream_vk_CreateDescriptorUpdateTemplateKHR(
-    VkDevice device, const VkDescriptorUpdateTemplateCreateInfo* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDescriptorUpdateTemplate* pDescriptorUpdateTemplate) {
-    MESA_TRACE_SCOPE("vkCreateDescriptorUpdateTemplateKHR");
-    VkResult vkCreateDescriptorUpdateTemplateKHR_VkResult_return = (VkResult)0;
-    VK_FROM_HANDLE(gfxstream_vk_device, gfxstream_device, device);
-    {
-        auto vkEnc = gfxstream::vk::ResourceTracker::getThreadLocalEncoder();
-        vkCreateDescriptorUpdateTemplateKHR_VkResult_return =
-            vkEnc->vkCreateDescriptorUpdateTemplateKHR(
-                gfxstream_device->internal_object, pCreateInfo, pAllocator,
-                pDescriptorUpdateTemplate, true /* do lock */);
-    }
-    return vkCreateDescriptorUpdateTemplateKHR_VkResult_return;
-}
 void gfxstream_vk_DestroyDescriptorUpdateTemplateKHR(
     VkDevice device, VkDescriptorUpdateTemplate descriptorUpdateTemplate,
     const VkAllocationCallbacks* pAllocator) {
