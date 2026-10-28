@@ -6921,7 +6921,9 @@ VkResult ResourceTracker::on_vkMapMemoryIntoAddressSpaceGOOGLE_pre(void*, VkResu
     auto& memInfo = it->second;
 
     GoldfishAddressSpaceBlockPtr block = std::make_shared<GoldfishAddressSpaceBlock>();
-    block->allocate(mGoldfishAddressSpaceBlockProvider.get(), memInfo.coherentMemorySize);
+    if (!block->allocate(mGoldfishAddressSpaceBlockProvider.get(), memInfo.coherentMemorySize)) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
 
     // Host visible memory that is not host cached is write-combined on the host. The
     // hypervisor makes a write-back guest mapping of such memory uncached, so map it

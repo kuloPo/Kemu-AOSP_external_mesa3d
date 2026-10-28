@@ -25559,8 +25559,12 @@ VkResult VkEncoder::vkMapMemoryIntoAddressSpaceGOOGLE(VkDevice device, VkDeviceM
     bool queueSubmitWithCommandsEnabled =
         sFeatureBits & VULKAN_STREAM_FEATURE_QUEUE_SUBMIT_WITH_COMMANDS_BIT;
     if (!queueSubmitWithCommandsEnabled && doLock) this->lock();
-    sResourceTracker->on_vkMapMemoryIntoAddressSpaceGOOGLE_pre(this, VK_SUCCESS, device, memory,
-                                                               pAddress);
+    VkResult preprocessResult = sResourceTracker->on_vkMapMemoryIntoAddressSpaceGOOGLE_pre(
+        this, VK_SUCCESS, device, memory, pAddress);
+    if (preprocessResult != VK_SUCCESS) {
+        if (!queueSubmitWithCommandsEnabled && doLock) this->unlock();
+        return preprocessResult;
+    }
     auto stream = mImpl->stream();
     auto pool = mImpl->pool();
     VkDevice local_device;
